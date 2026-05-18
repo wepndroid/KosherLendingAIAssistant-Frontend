@@ -3,8 +3,9 @@ import { BRAND, TEAM } from "@/lib/mock-data";
 import { StatusBadge, statusToVariant } from "@/components/StatusBadge";
 import {
   Building2, Users, Brain, FileText, Smartphone, Shield, Download as DownloadIcon, Plug, Save, Loader2,
+  Activity, CheckCircle2, XCircle,
 } from "lucide-react";
-import api from "@/lib/api";
+import api, { type ProbeResponse, type ProbeResult } from "@/lib/api";
 
 const SECTIONS = [
   { id: "brand", label: "Brand Profile", icon: Building2 },
@@ -37,6 +38,9 @@ export function SettingsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [integrations, setIntegrations] = useState<any[]>([]);
+  const [probing, setProbing] = useState(false);
+  const [probe, setProbe] = useState<ProbeResponse | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
 
   useEffect(() => {
     api.brand.get().then((b) => setBrand((cur) => ({ ...cur, ...b }))).catch(() => {});
@@ -49,6 +53,20 @@ export function SettingsPage() {
       await api.brand.patch(brand);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runProbe = async () => {
+    setProbing(true);
+    setProbeError(null);
+    setProbe(null);
+    try {
+      const r = await api.integrations.probe();
+      setProbe(r);
+    } catch (e: any) {
+      setProbeError(e?.message || "Probe failed");
+    } finally {
+      setProbing(false);
     }
   };
 
@@ -215,10 +233,118 @@ export function SettingsPage() {
               <div className="text-[13px] text-muted-foreground sm:col-span-2 p-4">Backend not reachable. Start the FastAPI server to populate this.</div>
             )}
           </div>
+
+          <div className="mt-5 rounded-md border border-border bg-background/60 p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-medium text-[13.5px]">Live API key probe</div>
+                <div className="text-[12px] text-muted-foreground mt-0.5">
+                  Calls OpenAI embeddings and Anthropic once (no retries) and shows the exact provider error.
+                </div>
+              </div>
+              <button onClick={runProbe} disabled={probing} className="btn-cinematic">
+                {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                {probing ? "Testing…" : "Test connections"}
+              </button>
+            </div>
+
+            {probeError && (
+              <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-[12.5px] text-destructive">
+                {probeError}
+              </div>
+            )}
+
+            {probe && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <ProbeCard title="OpenAI Embeddings" result={probe.openai} />
+                <ProbeCard title="Anthropic Claude" result={probe.anthropic} />
+              </div>
+            )}
+          </div>
         </Card>
       </div>
     </div>
   );
+}
+
+function ProbeCard({ title, result }: { title: string; result: ProbeResult }) {
+  const ok = result.ok;
+  return (
+    <div className={`rounded-md border p-4 ${ok ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/40 bg-destructive/5"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium text-[13.5px] flex items-center gap-2">
+          {ok ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" strokeWidth={1.75} />
+          ) : (
+            <XCircle className="h-4 w-4 text-destructive" strokeWidth={1.75} />
+          )}
+          {title}
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {result.status_code ?? (result.configured === false ? "NO KEY" : "ERR")}
+        </span>
+      </div>
+
+      <div className="mt-2 space-y-1 text-[12.5px]">
+        {result.model && (
+          <Row k="Model" v={result.model} />
+        )}
+        {ok && result.dimensions !== undefined && (
+          <Row k="Dimensions" v={String(result.dimensions)} />
+        )}
+        {ok && result.reply !== undefined && (
+          <Row k="Reply" v={result.reply || "(empty)"} />
+        )}
+        {!ok && result.error_code && (
+          <Row k="Code" v={result.error_code} mono />
+        )}
+        {!ok && result.error_type && (
+          <Row k="Error type" v={result.error_type} mono />
+        )}
+        {!ok && result.exception_type && !result.error_type && (
+          <Row k="Exception" v={result.exception_type} mono />
+        )}
+        {!ok && (result.error_message || result.message) && (
+          <div className="mt-2">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Message</div>
+            <div className="rounded border border-border bg-background/80 p-2 font-mono text-[11px] leading-snug break-words whitespace-pre-wrap">
+              {result.error_message || result.message}
+            </div>
+          </div>
+        )}
+        {typeof result.elapsed_ms === "number" && (
+          <Row k="Elapsed" v={`${result.elapsed_ms} ms`} />
+        )}
+      </div>
+
+      {!ok && (
+        <div className="mt-3 text-[11.5px] text-muted-foreground leading-relaxed">
+          {hintFor(result)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-muted-foreground">{k}</span>
+      <span className={mono ? "font-mono text-[11.5px]" : ""}>{v}</span>
+    </div>
+  );
+}
+
+function hintFor(r: ProbeResult): string {
+  if (!r.configured) return "API key is not set on the server. Add it to the backend environment and redeploy.";
+  const code = r.error_code || "";
+  const status = r.status_code;
+  if (status === 401) return "Key is rejected as invalid. Rotate the API key on the server.";
+  if (code === "insufficient_quota") return "Account is out of credit or hit the spend cap. Add billing/credit to the provider account.";
+  if (code === "rate_limit_exceeded") return "Rate limit (RPM/TPM) reached. Raise the account's limits or reduce concurrent usage.";
+  if (status === 429) return "Provider returned 429. Most likely no billing / quota exhausted, or rate limit too low for this account.";
+  if (status === 403) return "Forbidden — key may lack access to this model or org.";
+  return "Provider returned an error. See message above.";
 }
 
 function Card({ id, title, icon: Icon, eyebrow, children }: { id: string; title: string; icon: React.ElementType; eyebrow?: string; children: React.ReactNode }) {

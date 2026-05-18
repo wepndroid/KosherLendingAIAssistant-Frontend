@@ -171,8 +171,30 @@ export const exportApi = {
 };
 
 // ─── Integrations ──────────────────────────────────────
+export interface ProbeResult {
+  provider: "openai" | "anthropic";
+  ok: boolean;
+  configured: boolean;
+  model?: string;
+  status_code?: number;
+  dimensions?: number;
+  reply?: string;
+  elapsed_ms?: number;
+  exception_type?: string;
+  error_type?: string;
+  error_code?: string;
+  error_message?: string;
+  message?: string;
+}
+
+export interface ProbeResponse {
+  openai: ProbeResult;
+  anthropic: ProbeResult;
+}
+
 export const integrations = {
   list: () => request<{ items: any[] }>("/api/integrations"),
+  probe: () => request<ProbeResponse>("/api/integrations/probe", { method: "POST" }),
 };
 
 // ─── Health ────────────────────────────────────────────
