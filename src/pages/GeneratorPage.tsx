@@ -22,7 +22,8 @@ const STEPS = [
 ];
 
 type GeneratedItem = {
-  id?: string;
+  id?: string | null;
+  persisted?: boolean;
   topic: string;
   pillar: string;
   platform: string;
@@ -330,25 +331,45 @@ export function GeneratorPage() {
                 {BRAND.compliance}
               </div>
 
+              {result.persisted === false && (
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning leading-relaxed">
+                  <span className="font-medium">Preview only.</span>{" "}
+                  This draft was generated but not saved to the database (PERSIST_GENERATED_CONTENT is off, e.g. Supabase is read-only).
+                  Copy any content you need before refreshing — Approve, Save, Calendar and Export are disabled.
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
-                <Btn icon={CheckCircle2} primary onClick={async () => {
-                  if (!result.id) return;
-                  await api.content.patch(result.id, { status: "Approved" });
-                }}>Approve</Btn>
+                <Btn icon={CheckCircle2} primary
+                  disabled={!result.id}
+                  title={!result.id ? "Disabled: draft is preview-only" : undefined}
+                  onClick={async () => {
+                    if (!result.id) return;
+                    await api.content.patch(result.id, { status: "Approved" });
+                  }}>Approve</Btn>
                 <Btn icon={Edit3}>Edit</Btn>
                 <Btn icon={RefreshCw} onClick={generate}>Regenerate</Btn>
-                <Btn icon={Save}>Save to History</Btn>
-                <Btn icon={CalendarPlus}>Send to Calendar</Btn>
-                <Btn icon={Download} onClick={async () => {
-                  if (!result.id) return;
-                  const r = await api.export.create({ name: `Package — ${result.topic}`, format: "word", content_ids: [result.id] });
-                  if (r?.export?.download_url) {
-                    const a = document.createElement("a");
-                    a.href = r.export.download_url;
-                    a.download = `${(result.topic || "package").replace(/[^a-z0-9]/gi, "_")}.docx`;
-                    a.click();
-                  }
-                }}>Export</Btn>
+                <Btn icon={Save}
+                  disabled={!result.id}
+                  title={!result.id ? "Disabled: draft is preview-only" : undefined}
+                >Save to History</Btn>
+                <Btn icon={CalendarPlus}
+                  disabled={!result.id}
+                  title={!result.id ? "Disabled: draft is preview-only" : undefined}
+                >Send to Calendar</Btn>
+                <Btn icon={Download}
+                  disabled={!result.id}
+                  title={!result.id ? "Disabled: draft is preview-only" : undefined}
+                  onClick={async () => {
+                    if (!result.id) return;
+                    const r = await api.export.create({ name: `Package — ${result.topic}`, format: "word", content_ids: [result.id] });
+                    if (r?.export?.download_url) {
+                      const a = document.createElement("a");
+                      a.href = r.export.download_url;
+                      a.download = `${(result.topic || "package").replace(/[^a-z0-9]/gi, "_")}.docx`;
+                      a.click();
+                    }
+                  }}>Export</Btn>
               </div>
             </div>
           </div>
@@ -451,14 +472,24 @@ function Btn({
   icon: Icon,
   primary,
   onClick,
+  disabled,
+  title,
 }: {
   children: React.ReactNode;
   icon: React.ElementType;
   primary?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
-    <button type="button" onClick={onClick} className={primary ? "btn-cinematic" : "btn-cinematic-secondary"}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`${primary ? "btn-cinematic" : "btn-cinematic-secondary"} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+    >
       <Icon className="h-3.5 w-3.5" strokeWidth={1.75} /> {children}
     </button>
   );
